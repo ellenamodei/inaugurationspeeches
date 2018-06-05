@@ -1,0 +1,200 @@
+---
+title: "Sentiment Analysis of Inaugration Speeches"
+author: "Ellen Amodei"
+date: '2018-04-20'
+output:
+  html_document:
+    df_print: paged
+  html_notebook:
+    df_print: paged
+---
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(tidytext)
+library(readr)
+library(ggplot2)
+library(tm)
+library(SnowballC)
+library(wordcloud) 
+library(RColorBrewer)## For wordcloud coloring
+library(topicmodels)
+library(tidytext)
+library(FactoMineR)
+
+```
+
+
+```{r}
+rm(list=ls())
+
+```
+CSV inaugration speeches from Kaggle
+```{r}
+library(data.table)
+data <- fread("~/Downloads/inaug_speeches.csv")
+
+
+```
+
+Filter for speeches made from 1973- Present
+```{r}
+speech <- data[ c(48:58), ]
+```
+
+
+```{r}
+tidy_speech<- speech %>% unnest_tokens(word,text) %>% anti_join(stop_words)
+
+tidy_speech %>% count(word, sort=TRUE)
+
+```
+
+```{r}
+tidy_speech %>%
+    # Count by President
+    count(Name) %>%
+    # Rename the new column president_total
+    rename(president_total = n)
+```
+
+
+
+```{r}
+speech_sentiment <- tidy_speech %>% 
+    # Group by President
+    group_by(Name) %>% 
+    # Define a new column station_total
+    mutate(president_total = n()) %>%
+    ungroup() %>%
+    # Implement sentiment analysis with the NRC lexicon
+    inner_join(get_sentiments("nrc"))
+```
+
+
+```{r}
+#Count sentiment based on President
+sentiment_totals <- speech_sentiment %>% count(Name,sentiment, president_total)
+sentiment_totals
+```
+
+
+```{r}
+tf_idf_df <- tidy_speech %>% 
+        count(Name, word, sort = TRUE) %>%
+        bind_tf_idf(word, Name, n)
+
+tf_idf_df %>% mutate(word = reorder(word, n)) %>% top_n(15) %>% ggplot(aes(x=word, y=tf_idf, fill = Name)) + geom_col() + coord_flip()
+
+tf_idf_df
+```
+
+```{r}
+speech_sentiment %>% 
+    count(Name, sentiment, president_total) %>%
+    mutate(percent = n / president_total) %>%
+    filter(sentiment == "positive") %>%
+    arrange(percent)   
+```
+
+```{r}
+speech_sentiment %>% 
+    count(Name, sentiment, president_total) %>%
+    mutate(percent = n / president_total) %>%
+    filter(sentiment == "negative") %>%
+    arrange(percent)
+```
+
+
+```{r}
+speech_sentiment %>%
+    # Count by word and sentiment
+    count(word,sentiment) %>%
+    # Group by sentiment
+    group_by(sentiment) %>%
+    # Take the top 10 words for each sentiment
+    top_n(10,n) %>%
+    ungroup() %>%
+    mutate(word = reorder(word, n)) %>%
+    # Set up the plot with aes()
+    ggplot(aes(word,n, fill=sentiment)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~ sentiment, scales = "free") +
+    coord_flip()
+```
+
+
+```{r}
+speech_sentiment %>%
+    # Filter for only negative words
+    filter(sentiment == "negative") %>%
+    # Count by word and President
+    count(word,Name) %>%
+    # Group by President
+    group_by(Name) %>%
+    # Take the top 10 words for each President
+    top_n(8, n) %>%
+    ungroup() %>%
+    mutate(word = reorder(paste(word, Name, sep = "__"), n)) %>%
+    # Set up the plot with aes()
+    ggplot(aes(word, n, fill = Name)) +
+    geom_col(show.legend = FALSE) +
+    scale_x_discrete(labels = function(x) gsub("__.+$", "", x)) +
+    facet_wrap(~ Name, nrow = 2, scales = "free") +
+    coord_flip()
+```
+
+
+```{r}
+speech_sentiment %>%
+    # Filter for only positive words
+    filter(sentiment == "positive") %>%
+    # Count by word and President
+    count(word,Name) %>%
+    # Group by President
+    group_by(Name) %>%
+    # Take the top 10 words for each President
+    top_n(8, n) %>%
+    ungroup() %>%
+    mutate(word = reorder(paste(word, Name, sep = "__"), n)) %>%
+    # Set up the plot with aes()
+    ggplot(aes(word, n, fill = Name)) +
+    geom_col(show.legend = FALSE) +
+    scale_x_discrete(labels = function(x) gsub("__.+$", "", x)) +
+    facet_wrap(~ Name, nrow = 2, scales = "free") +
+    coord_flip()
+```
+
+
+
+
+
+
+```{r}
+library(lubridate)
+
+tidy_speech %>% mutate(date = floor_date(Date, unit = "1 month")) %>%
+    # Define a new column that rounds each date to the nearest 1 month
+    filter(word %in% c("freedom", "tax", "peace",
+                       "liberty", "war", "revolution")) %>%
+    # Count by date and word
+    count(Date, word) %>%
+    ungroup() %>%
+    # Set up your plot with aes()
+    ggplot(aes(Date, n, color = word)) +
+    # Make facets by word
+    facet_wrap(~word) +
+    geom_line(size = 1.5, show.legend = FALSE) +
+    expand_limits(y = 0)
+```
+
+
+```{r}
+library(tm)
+library(SnowballC)
+library(wordcloud)
+
+wordcloud(tidy_speech$word, max.words = 100, random.order = FALSE)
+```
+
